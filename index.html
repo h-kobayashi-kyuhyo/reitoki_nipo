@@ -20,6 +20,7 @@
     /* 入力パーツ */
     .input-long{min-width:110px !important;}
     .data-input { min-width: 90px; height: 48px !important; font-size: 1.1rem !important; text-align: center; }
+    select.data-input { padding-top: 8px !important; padding-bottom: 8px !important; }
     .btn-group .btn { padding: 12px 0 !important; font-size: 16px !important; font-weight: bold; min-width: 35px; border-color: #ced4da; }
     .btn-check:checked + .btn-outline-secondary { background-color: #0d6efd; border-color: #0d6efd; color: #fff; }
     
@@ -94,14 +95,88 @@
       <button class="btn btn-outline-secondary" onclick="showAreaSelection(currentBuilding)">← エリア選択に戻る</button>
       <span id="displayLocation" class="badge bg-dark fs-6"></span>
     </div>
+
     <div id="formContainer"></div>
-    <button id="saveBtn" class="btn btn-success btn-lg w-100 mt-5 mb-5 shadow" onclick="submitForm()">
+    <button id="saveBtn" class="btn btn-success btn-lg w-100 mt-5 mb-5 shadow" onclick="confirmSubmit()">
       報告を送信する <span id="saveSpinner" class="spinner-border spinner-border-sm loading-spinner"></span>
     </button>
   </div>
 </div>
 
+<!-- 送信確認用モーダル -->
+<div class="modal fade" id="confirmSubmitModal" tabindex="-1" aria-labelledby="confirmSubmitModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header bg-success text-white">
+        <h5 class="modal-title fw-bold" id="confirmSubmitModalLabel">送信確認</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="閉じる"></button>
+      </div>
+      <div class="modal-body fs-5 text-center py-4">
+        入力した報告データを送信します。<br>よろしいですか？
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-lg" data-bs-dismiss="modal">キャンセル</button>
+        <button type="button" class="btn btn-success btn-lg px-4" onclick="executeSubmit()">送信する</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 送信完了用モーダル -->
+<div class="modal fade" id="resultModal" tabindex="-1" aria-labelledby="resultModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header bg-primary text-white">
+        <h5 class="modal-title fw-bold" id="resultModalLabel">完了</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="閉じる" onclick="showAreaSelection(currentBuilding)"></button>
+      </div>
+      <div class="modal-body fs-5 text-center py-4 fw-bold" id="resultModalBody">
+        <!-- メッセージがここに入ります -->
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-primary btn-lg w-100" data-bs-dismiss="modal" onclick="showAreaSelection(currentBuilding)">閉じる (エリア選択へ戻る)</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
 <script>
+// GAS環境以外（プレビュー環境など）で「google is not defined」エラーを防ぐためのダミーオブジェクト
+if (typeof google === 'undefined') {
+  window.google = {
+    script: {
+      run: {
+        withSuccessHandler: function(callback) {
+          return {
+            getSiteList: function() {
+              setTimeout(() => callback([ { id: 'site1', name: '東京事業所(デモ)' }, { id: 'site2', name: '大阪事業所(デモ)' } ]), 300);
+            },
+            getInitialData: function() {
+              const mockMaster = [ ['東京事業所(デモ)', 'サザン棟', '屋上', '1号冷凍機', 'Refrigerator', '低圧#G1,高圧#G1,油面,電流,異常振動,運転時間'] ];
+              const mockStaff = [ ['シン', '東京事業所(デモ)'] ];
+              setTimeout(() => callback({ master: mockMaster, staff: mockStaff }), 300);
+            },
+            checkLogin: function(id, pass) {
+              setTimeout(() => {
+                if (pass === '1234') {
+                  callback({ success: true, siteName: id === 'site1' ? '東京事業所(デモ)' : '大阪事業所(デモ)' });
+                } else {
+                  callback({ success: false });
+                }
+              }, 500);
+            },
+            saveData: function(results) {
+              setTimeout(() => callback("報告の送信が完了しました！(デモ環境)"), 1000);
+            }
+          };
+        }
+      }
+    }
+  };
+}
+
 let masterData = [];
 let staffMaster = []; 
 let currentSiteName = "";
@@ -152,9 +227,8 @@ function logout() {
   hideAllViews();
   document.getElementById('loginView').style.display = 'block';
   
-  // 4. URLを初期状態に戻したい場合（オプション）
-  // google.script.host.close(); // これはウィンドウ自体を閉じる場合
 }
+
 // 共通情報（日付・担当者）のセットアップ
 function setupCommonFields() {
   const dateInput = document.getElementById('commonDate');
@@ -238,71 +312,61 @@ function showInputForm(areaName) {
 function generateForm() {
   const container = document.getElementById('formContainer');
   container.innerHTML = '';
-  const myConfig = masterData.filter(row => 
-    row[0] === currentSiteName && row[1] === currentBuilding && row[2] === currentArea
-  );
-
+  const myConfig = masterData.filter(row => row[0] === currentSiteName && row[1] === currentBuilding && row[2] === currentArea);
   const equipmentNames = [...new Set(myConfig.map(row => row[3]))];
+  
   equipmentNames.forEach(eqName => {
     const itemsOfEq = myConfig.filter(row => row[3] === eqName);
     const type = itemsOfEq[0][4]; 
     const isRef = (type === 'Refrigerator' || type === 'Ref_V');
 
     let html = `<div class="card p-2 mb-3">
-                 <div class="d-flex justify-content-between align-items-center mb2 border-bottom">  
+                 <div class="d-flex justify-content-between align-items-center mb2 border-bottom pb-2">  
                   <div class="label-title text-primary">【${eqName}】</div>
-                   <div class="form-check form-swich">
+                   <div class="form-check form-switch">
                     <input class="form-check-input" type="checkbox" id="stop-${eqName}" onchange="autoFillZero('${eqName}',this.checked)">
-                    <label class="from-check-label small text-danger fw-bold" for="stop-${eqName}">停止(一括0)</label>
+                    <label class="form-check-label small text-danger fw-bold" for="stop-${eqName}">停止(一括0)</label>
                    </div>
                 </div>
-                <div class="scrollable-table">`;
-
+                <div class="scrollable-table mt-2">`;
     html += `<table class="table table-sm table-bordered align-middle text-center mb-0">`;
 
     if (isRef) {
       const targetItems = itemsOfEq[0][5] ? itemsOfEq[0][5].split(/[、,]/) : ["低圧","高圧","油面","電流"];
-      const parsedItems=targetItems.map(it=>{
-        const parts=it.split('#');
-        return{
-          displayName:parts[0],
-          groupTag:parts[1] || ""
-        } ;
-      });
-
+      const parsedItems = targetItems.map(it => { const parts = it.split('#'); return { displayName:parts[0], groupTag:parts[1] || "" }; });
       html += `<thead class="table-light"><tr><th>対象</th>${parsedItems.map(it => `<th>${it.displayName}</th>`).join('')}</tr></thead><tbody>`;
       const oilLevels = [{ label: '█', value: '100%' }, { label: '▅', value: '75%' }, { label: '▄', value: '50%' }, { label: '▃', value: '25%' }, { label: '＿', value: '0%' }];
 
       itemsOfEq.forEach((item, idx) => {
         html += `<tr><th class="table-light">現況</th>`;
         parsedItems.forEach(it => {
-          const isLevelGauge=it.displayName.includes("油面")||it.displayName.includes("液面");
-          const isLongInput=it.displayName.includes("時間");
+          const isLevelGauge = it.displayName.includes("油面")||it.displayName.includes("液面");
+          const isLongInput = it.displayName.includes("時間");
+          // 「振動」または「音」を含む項目を判定
+          const isVibration = it.displayName.includes("振動") || it.displayName.includes("音");
+
           if (isLevelGauge) {
             html += `<td><div class="btn-group">${oilLevels.map((lvl, lIdx) => `
-                <input type="radio" class="btn-check data-input"
-                    name="level-${eqName}-${idx}-${it.displayName}" 
-                    id="l-${eqName}-${idx}-${it.displayName}-${lIdx}" 
-                    value="${lvl.value}" 
-                    data-name="${eqName}" 
-                    data-item="${it.displayName}">
-                <label class="btn btn-outline-secondary p-0" for="l-${eqName}-${idx}-${it.displayName}-${lIdx}">${lvl.label}</label>
-              `).join('')}</div></td>`;
+                <input type="radio" class="btn-check data-input" name="level-${eqName}-${idx}-${it.displayName}" id="l-${eqName}-${idx}-${it.displayName}-${lIdx}" value="${lvl.value}" data-name="${eqName}" data-item="${it.displayName}">
+                <label class="btn btn-outline-secondary p-0" for="l-${eqName}-${idx}-${it.displayName}-${lIdx}">${lvl.label}</label>`).join('')}</div></td>`;
+          } else if (isVibration) {
+            // 振動・異音の場合はプルダウン(有/無)を生成
+            html += `<td>
+                      <select class="form-select form-select-sm data-input" data-name="${eqName}" data-item="${it.displayName}">
+                        <option value=""></option>
+                        <option value="無">無</option>
+                        <option value="有">有</option>
+                      </select>
+                     </td>`;
           } else {
-            html += `<td><input type="number" step="0.01" class="form-control form-control-sm data-input ${isLongInput ? 'input-long' : ''}" 
-                      data-name="${eqName}" 
-                      data-item="${it.displayName}" 
-                      data-group="${it.groupTag}" 
-                      ${it.groupTag ? 'oninput="syncGroupValues(this)"' : ''}></td>`;
+            html += `<td><input type="number" step="0.01" class="form-control form-control-sm data-input ${isLongInput ? 'input-long' : ''}" data-name="${eqName}" data-item="${it.displayName}" data-group="${it.groupTag}" ${it.groupTag ? 'oninput="syncGroupValues(this)"' : ''}></td>`;
           }
         });
         html += `</tr>`;
       });
     } else {
       html += `<thead class="table-light"><tr>${itemsOfEq.map(it => `<th>${it[3]}</th>`).join('')}</tr></thead><tbody><tr>`;
-      itemsOfEq.forEach(it => {
-        html += `<td><input type="number" step="0.1" class="form-control form-control-sm data-input" data-name="${it[3]}" data-item="指針"></td>`;
-      });
+      itemsOfEq.forEach(it => { html += `<td><input type="number" step="0.1" class="form-control form-control-sm data-input" data-name="${it[3]}" data-item="指針"></td>`; });
       html += `</tr>`;
     }
     html += `</tbody></table></div></div>`;
@@ -310,33 +374,45 @@ function generateForm() {
   });
 }
 
-function submitForm() {
+function confirmSubmit() {
+  const modalEl = document.getElementById('confirmSubmitModal');
+  const modal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);  
+  modal.show();
+}
+
+function executeSubmit() {
+  // 確認モーダルを閉じる
+  const modalEl = document.getElementById('confirmSubmitModal');
+  const modal = bootstrap.Modal.getInstance(modalEl);
+  if (modal) modal.hide();
+
   const staff = document.getElementById('commonStaff').value;
   const date = document.getElementById('commonDate').value;
   const weather = document.getElementById('commonWeather').value;
-
-  if (!confirm("報告を送信しますか？")) return;
+  
   document.getElementById('saveSpinner').style.display = 'inline-block';
   document.getElementById('saveBtn').disabled = true;
 
   const results = [];
   document.querySelectorAll('.data-input').forEach(el => {
     if (el.type === 'radio' && !el.checked) return;
-    if (el.value) {
-      results.push({
-        date: date, site: currentSiteName, staff: staff, weather: weather,
-        building: currentBuilding, area: currentArea, no: el.dataset.name, item: el.dataset.item, value: el.value
-      });
-    }
+    if (el.value) results.push({ date: date, site: currentSiteName, staff: staff, weather: weather, building: currentBuilding, area: currentArea, no: el.dataset.name, item: el.dataset.item, value: el.value });
   });
 
   google.script.run.withSuccessHandler(msg => {
-    alert(msg);
     document.getElementById('saveSpinner').style.display = 'none';
     document.getElementById('saveBtn').disabled = false;
-    showAreaSelection(currentBuilding); // 送信後はエリア選択に戻る
+    
+    // アラートの代わりに完了モーダルを表示
+    document.getElementById('resultModalBody').innerText = msg;
+    const resModalEl = document.getElementById('resultModal');
+    const resModal = bootstrap.Modal.getInstance(resModalEl) || new bootstrap.Modal(resModalEl);    
+    resModal.show();
+    
+    // ※ エリア選択画面に戻る処理は、モーダルを閉じるボタン(onclick="showAreaSelection(currentBuilding)")に移動させました。
   }).saveData(results);
 }
+
 function syncGroupValues(sender) {
   const group = sender.dataset.group;
   if (!group) return; // タグがない項目は何もしない
@@ -348,11 +424,10 @@ function syncGroupValues(sender) {
   allInputs.forEach(el => {
     if (el !== sender) {
       el.value = val;
-      // 同期された側でも input イベントを発生させたい場合は以下を追加（連鎖反応が必要な場合）
-      // el.dispatchEvent(new Event('input')); 
     }
   });
 }
+
 function createMenuBtn(text, onClick) {
   const btn = document.createElement('button');
   btn.className = "btn btn-outline-dark btn-lg py-4 btn-step";
@@ -370,37 +445,37 @@ function hideAllViews() {
   });
 }
 
-function backToMenu() 
- { hideAllViews(); document.getElementById('menuView').style.display = 'block'; }
+function backToMenu() { 
+  hideAllViews(); 
+  document.getElementById('menuView').style.display = 'block'; 
+}
 
 function autoFillZero(eqName, isStopped) {
-  if (!isStopped) return; // チェックが外された時は何もしない（あるいは値を消すなら el.value=''）
-
-  // 画面内のすべての入力欄(data-input)のうち、対象の設備名(data-name)を持つものを探す
-  const inputs = document.querySelectorAll(`.data-input[data-name="${eqName}"]`);
-  
-  inputs.forEach(el => {
+  if (!isStopped) return; 
+  document.querySelectorAll(`.data-input[data-name="${eqName}"]`).forEach(el => {
     const itemName = el.dataset.item || "";
-    
-    // 「時間」を含まない項目（＝数値項目や油面ボタン）を対象にする
-    if (!itemName.includes("時間")) {
+    // 時間と温度は除外
+    if (!itemName.includes("時間") && !itemName.includes("温度")) {
       
-      if (el.type === "number") {
-        el.value = 0;
-        // 同期タグ(#G1など)がある場合、他の設備へも0を伝播させる
-        if (el.dataset.group) {
-          syncGroupValues(el);
-        }
-      } else if (el.type === "radio") {
-        // 油面・液面などのボタンを「0%」または「＿」に自動セットしたい場合
-        const isLevelGauge=itemName.includes("液面")|| itemName.includes("油面");
-        if (isLevelGauge && el.value === "0%") {
-          el.checked = true;
+      if (el.tagName === "SELECT") {
+        // セレクトボックス(異音・振動など)の場合は「無」をセット
+        el.value = "無";
+      } 
+      else if (el.type === "number") { 
+        // 数値入力(電流・圧力など)の場合は 0 をセット
+        el.value = 0; 
+        if (el.dataset.group) syncGroupValues(el); 
+      } 
+      else if (el.type === "radio") { 
+        // ラジオボタン(油面・液面など)の場合は 0% をセット
+        if ((itemName.includes("液面")|| itemName.includes("油面")) && el.value === "0%") {
+          el.checked = true; 
         }
       }
+      
     }
   });
-} 
+}  
 </script>
 </body>
 </html>
