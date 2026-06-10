@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <base target="_top">
+  <meta charset="UTF-8">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
     body { background-color: #f0f2f5; padding: 15px; font-size: 18px; }
@@ -26,6 +28,10 @@
     
     #displayLocation { font-size: 1rem; padding: 8px 15px; }
     .loading-spinner { display: none; margin-left: 10px; }
+    
+    /* iframe（埋め込み）用のスタイル */
+    .iframe-container { position: relative; width: 100%; height: 70vh; min-height: 500px; border: 1px solid #ccc; border-radius: 5px; overflow: hidden; background: #fff; }
+    .iframe-container iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: none; }
   </style>
 </head>
 <body>
@@ -51,6 +57,7 @@
     <h4 id="welcomeMsg" class="mb-4 text-primary fw-bold"></h4> 
     <div class="d-grid gap-3 col-md-8 mx-auto">
       <button class="btn btn-outline-primary btn-lg py-4 btn-step" onclick="showBuildingSelection()">機械日報の入力</button>
+      <button class="btn btn-outline-success btn-lg py-4 btn-step" onclick="showReportMenu()">機械運転日報_報告書</button>
       <button class="btn btn-light btn-lg mt-3" onclick="logout()">ログアウト</button>
     </div>
   </div>
@@ -69,7 +76,7 @@
       <div class="row g-2">
         <div class="col-6">
           <label class="small text-muted fw-bold">点検日</label>
-          <input type="date" id="commonDate" class="form-control">
+          <input type="date" id="commonDate" class="form-control" onchange="updateAreaButtonsBadge()">
         </div>
         <div class="col-6">
           <label class="small text-muted fw-bold">天候</label>
@@ -93,7 +100,10 @@
   <div id="formView" style="display:none;">
     <div class="d-flex justify-content-between align-items-center mb-3">
       <button class="btn btn-outline-secondary" onclick="showAreaSelection(currentBuilding)">← エリア選択に戻る</button>
-      <span id="displayLocation" class="badge bg-dark fs-6"></span>
+      <div>
+        <span id="displayLocation" class="badge bg-dark fs-6"></span>
+        <span id="unfilledBadge" class="badge bg-danger fs-6 ms-2" style="display:none;">未入力: <span id="unfilledCount">0</span>件</span>
+      </div>
     </div>
 
     <div id="formContainer"></div>
@@ -101,6 +111,40 @@
       報告を送信する <span id="saveSpinner" class="spinner-border spinner-border-sm loading-spinner"></span>
     </button>
   </div>
+
+  <!-- 報告書ビュー -->
+  <div id="reportView" style="display:none;">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <button class="btn btn-outline-secondary" onclick="backToMenu()">← メニューへ戻る</button>
+      <h4 class="mb-0 fw-bold text-success">運転日報 報告書</h4>
+    </div>
+    
+    <div class="alert alert-success small mb-3">
+      💡 <b>スプレッドシートで作成した紙と同じレイアウトをそのまま映し出しています。</b><br>
+      ※本番では社内の日報シートがここに表示されます。
+    </div>
+    
+    <div class="card p-2 mb-3 bg-light shadow-sm">
+      <div class="row g-2 align-items-center">
+        <div class="col-md-7">
+          <select id="reportSheetSelect" class="form-select fw-bold" onchange="changeIframeUrl()">
+            <option value="https://docs.google.com/spreadsheets/d/e/2PACX-1vT1n1_R1O7gR8YJ5wY510D70h5nJ50zD3z0g3v2050H0t7o1O7/pubhtml?widget=true&headers=false">📄 サザン棟 レイアウト</option>
+            <option value="https://docs.google.com/spreadsheets/d/e/2PACX-1vT1n1_R1O7gR8YJ5wY510D70h5nJ50zD3z0g3v2050H0t7o1O7/pubhtml?gid=1&widget=true&headers=false">📄 ノーザン棟 レイアウト</option>
+          </select>
+        </div>
+        <div class="col-md-5 text-end">
+          <button class="btn btn-primary w-100" onclick="openSheetInNewTab()">
+            別タブで大きく開く / 印刷する
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="iframe-container shadow-sm">
+      <iframe id="reportIframe" src="" title="報告書プレビュー"></iframe>
+    </div>
+  </div>
+
 </div>
 
 <!-- 送信確認用モーダル -->
@@ -112,7 +156,7 @@
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="閉じる"></button>
       </div>
       <div class="modal-body fs-5 text-center py-4">
-        入力した報告データを送信します。<br>よろしいですか？
+        入力した報告データを送信・上書き保存します。<br>よろしいですか？
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary btn-lg" data-bs-dismiss="modal">キャンセル</button>
@@ -143,39 +187,59 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
 <script>
-// GAS環境以外（プレビュー環境など）で「google is not defined」エラーを防ぐためのダミーオブジェクト
-if (typeof google === 'undefined') {
-  window.google = {
-    script: {
-      run: {
-        withSuccessHandler: function(callback) {
-          return {
-            getSiteList: function() {
-              setTimeout(() => callback([ { id: 'site1', name: '東京事業所(デモ)' }, { id: 'site2', name: '大阪事業所(デモ)' } ]), 300);
-            },
-            getInitialData: function() {
-              const mockMaster = [ ['東京事業所(デモ)', 'サザン棟', '屋上', '1号冷凍機', 'Refrigerator', '低圧#G1,高圧#G1,油面,電流,異常振動,運転時間'] ];
-              const mockStaff = [ ['シン', '東京事業所(デモ)'] ];
-              setTimeout(() => callback({ master: mockMaster, staff: mockStaff }), 300);
-            },
-            checkLogin: function(id, pass) {
-              setTimeout(() => {
-                if (pass === '1234') {
-                  callback({ success: true, siteName: id === 'site1' ? '東京事業所(デモ)' : '大阪事業所(デモ)' });
-                } else {
-                  callback({ success: false });
-                }
-              }, 500);
-            },
-            saveData: function(results) {
-              setTimeout(() => callback("報告の送信が完了しました！(デモ環境)"), 1000);
-            }
-          };
-        }
+// GAS環境以外（プレビュー環境など）でエラーを防ぐためのダミーオブジェクト
+const googleAPI = typeof google !== 'undefined' ? google : {
+  script: {
+    run: {
+      withSuccessHandler: function(callback) {
+        return {
+          getSiteList: function() {
+            setTimeout(() => callback([ { id: 'site1', name: '東京事業所(デモ)' }, { id: 'site2', name: '大阪事業所(デモ)' } ]), 300);
+          },
+          getInitialData: function() {
+            const mockMaster = [ 
+              ['東京事業所(デモ)', 'サザン棟', '屋上', '1号冷凍機', 'Refrigerator', '低圧#G1,高圧#G1,油面,電流,異常振動,運転時間'],
+              ['東京事業所(デモ)', 'サザン棟', '屋上', '2号冷凍機', 'Refrigerator', '低圧,高圧,油面,電流,異常振動,運転時間'],
+              ['東京事業所(デモ)', 'サザン棟', '機械室', '空調機', 'Normal', '温度,湿度'] 
+            ];
+            const mockStaff = [ ['シン', '東京事業所(デモ)'] ];
+            setTimeout(() => callback({ master: mockMaster, staff: mockStaff }), 300);
+          },
+          checkLogin: function(id, pass) {
+            setTimeout(() => {
+              if (pass === '1234') {
+                callback({ success: true, siteName: id === 'site1' ? '東京事業所(デモ)' : '大阪事業所(デモ)' });
+              } else {
+                callback({ success: false });
+              }
+            }, 500);
+          },
+          getDailyData: function(date, site, building, area) {
+            setTimeout(() => {
+              const dummy = [
+                {no: '1号冷凍機', item: '低圧', value: '1.2'},
+                {no: '1号冷凍機', item: '油面', value: '75%'},
+              ];
+              callback(dummy);
+            }, 600);
+          },
+          getBuildingData: function(date, site, building) {
+            setTimeout(() => {
+              const dummy = [
+                {area: '屋上', no: '1号冷凍機', item: '低圧', value: '1.2'},
+                {area: '屋上', no: '1号冷凍機', item: '油面', value: '75%'},
+              ];
+              callback(dummy);
+            }, 600);
+          },
+          saveData: function(results) {
+            setTimeout(() => callback("報告データの保存（上書き）が完了しました！"), 1000);
+          }
+        };
       }
     }
-  };
-}
+  }
+};
 
 let masterData = [];
 let staffMaster = []; 
@@ -185,8 +249,7 @@ let currentArea = "";
 
 // ページ読み込み時の処理
 window.onload = () => {
-  // 事業所リストの取得（名前を確実に表示するための対策）
-  google.script.run
+  googleAPI.script.run
     .withSuccessHandler(list => {
       const select = document.getElementById('loginId');
       select.innerHTML = '<option value="">事業所を選択してください</option>';
@@ -201,8 +264,7 @@ window.onload = () => {
     })
     .getSiteList();
 
-  // マスタデータの取得
-  google.script.run
+  googleAPI.script.run
     .withSuccessHandler(res => { 
       if(res){ 
         masterData = res.master || []; 
@@ -211,25 +273,33 @@ window.onload = () => {
     })
     .getInitialData();
 };
+
 function logout() {
   if (!confirm("ログアウトしますか？")) return;
-
-  // 1. 保存されている変数をクリア
-  currentSiteName = "";
-  currentBuilding = "";
-  currentArea = "";
-  
-  // 2. 入力フォームの中身もクリア（念のため）
+  currentSiteName = ""; currentBuilding = ""; currentArea = "";
   document.getElementById('loginPass').value = "";
   document.getElementById('commonStaff').value = "";
-  
-  // 3. 画面表示をログイン画面に戻す
   hideAllViews();
   document.getElementById('loginView').style.display = 'block';
-  
 }
 
-// 共通情報（日付・担当者）のセットアップ
+function showReportMenu() {
+  hideAllViews();
+  document.getElementById('reportView').style.display = 'block';
+  changeIframeUrl();
+}
+
+function changeIframeUrl() {
+  const url = document.getElementById('reportSheetSelect').value;
+  document.getElementById('reportIframe').src = url;
+}
+
+function openSheetInNewTab() {
+  const url = document.getElementById('reportSheetSelect').value;
+  window.open(url, '_blank');
+}
+
+
 function setupCommonFields() {
   const dateInput = document.getElementById('commonDate');
   if(!dateInput.value) {
@@ -247,24 +317,23 @@ function attemptLogin() {
   const pass = document.getElementById('loginPass').value;
   if (!id || !pass) return alert("事業所とパスワードを入力してください");
 
-  google.script.run.withSuccessHandler(result => {
+  googleAPI.script.run.withSuccessHandler(result => {
     if (result.success) {
       currentSiteName = result.siteName;
       hideAllViews();
       document.getElementById('menuView').style.display = 'block';
       document.getElementById('welcomeMsg').innerText = "事業所: " + currentSiteName;
-      setupCommonFields(); // ログイン後に担当者リストを準備
+      setupCommonFields();
     } else { alert("パスワードが違います"); }
   }).checkLogin(id, pass);
 }
 
-// 棟の選択
 function showBuildingSelection() {
   hideAllViews();
   const myConfig = masterData.filter(row => row[0] === currentSiteName);
   const buildings = [...new Set(myConfig.map(row => row[1]))];
  
-  const view=document.getElementById('buildingSelectView');
+  const view = document.getElementById('buildingSelectView');
   const container = document.getElementById('buildingButtonContainer');
 
   if(view && container){
@@ -278,7 +347,6 @@ function showBuildingSelection() {
  }
 }
 
-// エリアの選択（共通入力欄がある画面）
 function showAreaSelection(buildingName) {
   currentBuilding = buildingName;
   hideAllViews();
@@ -290,14 +358,69 @@ function showAreaSelection(buildingName) {
 
   const container = document.getElementById('areaButtonContainer');
   container.innerHTML = '';
+  
   areas.forEach(a => {
-    container.appendChild(createMenuBtn(a, () => showInputForm(a)));
+    const btn = document.createElement('button');
+    btn.id = `area-btn-${a}`;
+    btn.className = "btn btn-outline-dark btn-lg py-4 btn-step position-relative d-flex justify-content-center align-items-center";
+    btn.innerHTML = `<span>${a}</span> <span class="badge bg-secondary ms-3 area-badge">確認中...</span>`;
+    btn.onclick = () => showInputForm(a);
+    container.appendChild(btn);
   });
+  
+  updateAreaButtonsBadge();
 }
 
-// 数値入力フォームの表示
+function updateAreaButtonsBadge() {
+  const date = document.getElementById('commonDate').value;
+  if (!date) return;
+  
+  document.querySelectorAll('.area-badge').forEach(badge => {
+    badge.className = 'badge bg-secondary ms-3 area-badge';
+    badge.innerText = '確認中...';
+  });
+
+  googleAPI.script.run.withSuccessHandler(savedData => {
+    const areas = [...new Set(masterData.filter(row => row[0] === currentSiteName && row[1] === currentBuilding).map(row => row[2]))];
+    
+    areas.forEach(area => {
+      const areaMaster = masterData.filter(row => row[0] === currentSiteName && row[1] === currentBuilding && row[2] === area);
+      let requiredCount = 0;
+      
+      areaMaster.forEach(row => {
+        const type = row[4];
+        if (type === 'Refrigerator' || type === 'Ref_V') {
+          const items = row[5] ? row[5].split(/[、,]/) : ["低圧","高圧","油面","電流"];
+          requiredCount += items.length;
+        } else {
+          requiredCount += 1; 
+        }
+      });
+
+      const areaSavedData = savedData.filter(d => d.area === area);
+      const uniqueSavedItems = new Set(areaSavedData.map(d => `${d.no}-${d.item}`));
+      const savedCount = uniqueSavedItems.size;
+      
+      const diff = requiredCount - savedCount;
+      
+      const btn = document.getElementById(`area-btn-${area}`);
+      if (btn) {
+        const badgeEl = btn.querySelector('.area-badge');
+        if (badgeEl) {
+          if (diff > 0) {
+            badgeEl.className = 'badge bg-danger ms-3 area-badge';
+            badgeEl.innerText = `未入力: ${diff}件`;
+          } else {
+            badgeEl.className = 'badge bg-success ms-3 area-badge';
+            badgeEl.innerText = '入力完了';
+          }
+        }
+      }
+    });
+  }).getBuildingData(date, currentSiteName, currentBuilding);
+}
+
 function showInputForm(areaName) {
-  // 担当者が選択されているかチェック（エリア選択時に促す）
   if (!document.getElementById('commonStaff').value) {
     alert("先に担当者を選択してください");
     return;
@@ -306,6 +429,7 @@ function showInputForm(areaName) {
   hideAllViews();
   document.getElementById('formView').style.display = 'block';
   document.getElementById('displayLocation').innerText = currentBuilding + " / " + currentArea;
+  
   generateForm();
 }
 
@@ -322,7 +446,7 @@ function generateForm() {
 
     let html = `<div class="card p-2 mb-3">
                  <div class="d-flex justify-content-between align-items-center mb2 border-bottom pb-2">  
-                  <div class="label-title text-primary">【${eqName}】</div>
+                  <div class="label-title text-primary">【${eqName}】 <span id="badge-${eqName}" class="badge bg-secondary ms-2 eq-badge"></span></div>
                    <div class="form-check form-switch">
                     <input class="form-check-input" type="checkbox" id="stop-${eqName}" onchange="autoFillZero('${eqName}',this.checked)">
                     <label class="form-check-label small text-danger fw-bold" for="stop-${eqName}">停止(一括0)</label>
@@ -342,7 +466,6 @@ function generateForm() {
         parsedItems.forEach(it => {
           const isLevelGauge = it.displayName.includes("油面")||it.displayName.includes("液面");
           const isLongInput = it.displayName.includes("時間");
-          // 「振動」または「音」を含む項目を判定
           const isVibration = it.displayName.includes("振動") || it.displayName.includes("音");
 
           if (isLevelGauge) {
@@ -350,7 +473,6 @@ function generateForm() {
                 <input type="radio" class="btn-check data-input" name="level-${eqName}-${idx}-${it.displayName}" id="l-${eqName}-${idx}-${it.displayName}-${lIdx}" value="${lvl.value}" data-name="${eqName}" data-item="${it.displayName}">
                 <label class="btn btn-outline-secondary p-0" for="l-${eqName}-${idx}-${it.displayName}-${lIdx}">${lvl.label}</label>`).join('')}</div></td>`;
           } else if (isVibration) {
-            // 振動・異音の場合はプルダウン(有/無)を生成
             html += `<td>
                       <select class="form-select form-select-sm data-input" data-name="${eqName}" data-item="${it.displayName}">
                         <option value=""></option>
@@ -372,6 +494,81 @@ function generateForm() {
     html += `</tbody></table></div></div>`;
     container.insertAdjacentHTML('beforeend', html);
   });
+
+  document.querySelectorAll('.data-input').forEach(el => {
+    el.addEventListener('input', updateUnfilledCount);
+    el.addEventListener('change', updateUnfilledCount);
+  });
+
+  fetchSavedData();
+}
+
+function fetchSavedData() {
+  const date = document.getElementById('commonDate').value;
+  const mainBadge = document.getElementById('unfilledBadge');
+  
+  mainBadge.style.display = 'inline-block';
+  mainBadge.className = 'badge bg-secondary fs-6 ms-2';
+  mainBadge.innerHTML = 'データ確認中...';
+
+  googleAPI.script.run.withSuccessHandler(data => {
+    if (data && data.length > 0) {
+      data.forEach(d => {
+        const els = document.querySelectorAll(`.data-input[data-name="${d.no}"][data-item="${d.item}"]`);
+        els.forEach(el => {
+          if (el.type === 'radio') {
+            if (el.value === d.value) el.checked = true;
+          } else {
+            el.value = d.value;
+          }
+        });
+      });
+    }
+    updateUnfilledCount();
+  }).getDailyData(date, currentSiteName, currentBuilding, currentArea);
+}
+
+function updateUnfilledCount() {
+  let totalCount = 0;
+  const eqNames = [...new Set([...document.querySelectorAll('.data-input')].map(el => el.dataset.name))];
+  
+  eqNames.forEach(eq => {
+    let eqCount = 0;
+    const radioGroups = new Set();
+    const checkedRadios = new Set();
+    
+    document.querySelectorAll(`.data-input[data-name="${eq}"]`).forEach(el => {
+      if (el.type === 'radio') {
+        radioGroups.add(el.name);
+        if (el.checked) checkedRadios.add(el.name);
+      } else {
+        if (el.value === '') eqCount++;
+      }
+    });
+    
+    eqCount += (radioGroups.size - checkedRadios.size);
+    totalCount += eqCount;
+    
+    const eqBadge = document.getElementById(`badge-${eq}`);
+    if (eqBadge) {
+      if (eqCount > 0) {
+        eqBadge.className = 'badge bg-danger ms-2 eq-badge';
+        eqBadge.innerText = `未入力: ${eqCount}`;
+      } else {
+        eqBadge.className = 'badge bg-success ms-2 eq-badge';
+        eqBadge.innerText = '入力完了';
+      }
+    }
+  });
+
+  const mainBadge = document.getElementById('unfilledBadge');
+  if (totalCount > 0) {
+    mainBadge.className = 'badge bg-danger fs-6 ms-2';
+    mainBadge.innerHTML = `全体未入力: <span id="unfilledCount">${totalCount}</span>件`;
+  } else {
+    mainBadge.className = 'badge bg-success fs-6 ms-2';
+    mainBadge.innerHTML = 'すべて入力完了';
+  }
 }
 
 function confirmSubmit() {
@@ -381,7 +578,6 @@ function confirmSubmit() {
 }
 
 function executeSubmit() {
-  // 確認モーダルを閉じる
   const modalEl = document.getElementById('confirmSubmitModal');
   const modal = bootstrap.Modal.getInstance(modalEl);
   if (modal) modal.hide();
@@ -399,31 +595,28 @@ function executeSubmit() {
     if (el.value) results.push({ date: date, site: currentSiteName, staff: staff, weather: weather, building: currentBuilding, area: currentArea, no: el.dataset.name, item: el.dataset.item, value: el.value });
   });
 
-  google.script.run.withSuccessHandler(msg => {
+  googleAPI.script.run.withSuccessHandler(msg => {
     document.getElementById('saveSpinner').style.display = 'none';
     document.getElementById('saveBtn').disabled = false;
     
-    // アラートの代わりに完了モーダルを表示
     document.getElementById('resultModalBody').innerText = msg;
     const resModalEl = document.getElementById('resultModal');
     const resModal = bootstrap.Modal.getInstance(resModalEl) || new bootstrap.Modal(resModalEl);    
     resModal.show();
-    
-    // ※ エリア選択画面に戻る処理は、モーダルを閉じるボタン(onclick="showAreaSelection(currentBuilding)")に移動させました。
   }).saveData(results);
 }
 
 function syncGroupValues(sender) {
   const group = sender.dataset.group;
-  if (!group) return; // タグがない項目は何もしない
+  if (!group) return;
 
   const val = sender.value;
-  // 画面内のすべての数値入力欄から同じグループタグを持つものを抽出
   const allInputs = document.querySelectorAll('.data-input[data-group="' + group + '"]');
   
   allInputs.forEach(el => {
     if (el !== sender) {
       el.value = val;
+      updateUnfilledCount();
     }
   });
 }
@@ -437,7 +630,7 @@ function createMenuBtn(text, onClick) {
 }
 
 function hideAllViews() {
-  const views=['loginView', 'menuView', 'buildingSelectView', 'areaSelectView', 'formView'];
+  const views=['loginView', 'menuView', 'buildingSelectView', 'areaSelectView', 'formView', 'reportView'];
   views.forEach(id => {
     const el=document.getElementById(id);
     if(el){
@@ -454,27 +647,20 @@ function autoFillZero(eqName, isStopped) {
   if (!isStopped) return; 
   document.querySelectorAll(`.data-input[data-name="${eqName}"]`).forEach(el => {
     const itemName = el.dataset.item || "";
-    // 時間と温度は除外
     if (!itemName.includes("時間") && !itemName.includes("温度")) {
-      
       if (el.tagName === "SELECT") {
-        // セレクトボックス(異音・振動など)の場合は「無」をセット
         el.value = "無";
-      } 
-      else if (el.type === "number") { 
-        // 数値入力(電流・圧力など)の場合は 0 をセット
+      } else if (el.type === "number") { 
         el.value = 0; 
         if (el.dataset.group) syncGroupValues(el); 
-      } 
-      else if (el.type === "radio") { 
-        // ラジオボタン(油面・液面など)の場合は 0% をセット
+      } else if (el.type === "radio") { 
         if ((itemName.includes("液面")|| itemName.includes("油面")) && el.value === "0%") {
           el.checked = true; 
         }
       }
-      
     }
   });
+  updateUnfilledCount();
 }  
 </script>
 </body>
