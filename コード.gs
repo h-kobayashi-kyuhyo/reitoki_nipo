@@ -177,7 +177,7 @@ function saveData(results) {
       if (rowMap.has(key)) {
         // 【上書き処理】すでに同じキーのデータが存在する場合は、その行をまるごと更新
         const rowNum = rowMap.get(key);
-        sheet.getRange(rowNum, 1, 1, 10).setValues([[
+        sheet.getRange(rowNum, 1, 1, 11).setValues([[
           res.date,      // A: 点検日
           res.site,      // B: 事業所
           res.staff,     // C: 担当者
@@ -187,7 +187,8 @@ function saveData(results) {
           "'" + res.no,  // G: 設備名
           res.item,      // H: 項目
           res.value,     // I: 値
-          now            // J: 書込時間
+          now,            // J: 書込時間
+          `=A${rowNum}&G${rowNum}&H${rowNum}` //検索値
         ]]);
       } else {
         // 【新規追加処理】データが存在しない場合は、新規追加リストに入れる
@@ -201,14 +202,22 @@ function saveData(results) {
           "'" + res.no,
           res.item,
           res.value,
-          now
+          now,
+          ""
         ]);
       }
     });
 
     // 新規追加行があれば、まとめてスプレッドシートの末尾に追加
     if (newRows.length > 0) {
-      sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, newRows[0].length).setValues(newRows);
+      const startRow = sheet.getLastRow() + 1;
+      // 変更: 新規追加する行それぞれの行番号を計算し、K列に数式をセット
+      for (let i = 0; i < newRows.length; i++) {
+        const rowNum = startRow + i;
+        newRows[i][10] = `=A${rowNum}&G${rowNum}&H${rowNum}`; // インデックス10 = K列
+      }
+      // 変更: 10列から11列(K列)に変更
+      sheet.getRange(startRow, 1, newRows.length, 11).setValues(newRows);
     }
     
     return "報告データの保存（上書き）が完了しました！";

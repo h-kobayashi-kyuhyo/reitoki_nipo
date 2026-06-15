@@ -18,13 +18,24 @@
     .scrollable-table { overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid #dee2e6; border-radius: 5px; background-color: white; }
     .table th { background-color: #f8f9fa; font-weight: 600; font-size: 14px; white-space: nowrap; }
     .table td { padding: 10px 5px !important; white-space: nowrap; }
-    
+
+    /*フォーム画面全体がPCで広がりすぎないよう制限 */
+    #formView { max-width: 850px; margin: 0 auto; }
+
     /* 入力パーツ */
     .input-long{min-width:110px !important;}
     .data-input { min-width: 90px; height: 48px !important; font-size: 1.1rem !important; text-align: center; }
     select.data-input { padding-top: 8px !important; padding-bottom: 8px !important; }
     .btn-group .btn { padding: 12px 0 !important; font-size: 16px !important; font-weight: bold; min-width: 35px; border-color: #ced4da; }
     .btn-check:checked + .btn-outline-secondary { background-color: #0d6efd; border-color: #0d6efd; color: #fff; }
+
+    .data-input-narrow { 
+      min-width: 80px !important; 
+      max-width: 150px !important; /* PCでもこの幅以上には広がらない */
+      margin: 0 auto !important;   /* セルの中央に配置 */
+      height: 40px !important; 
+      font-size: 1.1rem !important; 
+    }
     
     #displayLocation { font-size: 1rem; padding: 8px 15px; }
     .loading-spinner { display: none; margin-left: 10px; }
@@ -128,7 +139,7 @@
       <div class="row g-2 align-items-center">
         <div class="col-md-7">
           <select id="reportSheetSelect" class="form-select fw-bold" onchange="changeIframeUrl()">
-            <option value="https://docs.google.com/spreadsheets/d/e/2PACX-1vT1n1_R1O7gR8YJ5wY510D70h5nJ50zD3z0g3v2050H0t7o1O7/pubhtml?widget=true&headers=false">📄 サザン棟 レイアウト</option>
+            <option value="https://docs.google.com/spreadsheets/d/1-cVBN94i6ewaCPUaLvd05I9sIsgme0oMuYUDH6tOVYM/edit?gid=431557527#gid=431557527">📄 サザン棟 レイアウト</option>
             <option value="https://docs.google.com/spreadsheets/d/e/2PACX-1vT1n1_R1O7gR8YJ5wY510D70h5nJ50zD3z0g3v2050H0t7o1O7/pubhtml?gid=1&widget=true&headers=false">📄 ノーザン棟 レイアウト</option>
           </select>
         </div>
@@ -385,31 +396,54 @@ function updateAreaButtonsBadge() {
     
     areas.forEach(area => {
       const areaMaster = masterData.filter(row => row[0] === currentSiteName && row[1] === currentBuilding && row[2] === area);
-      let requiredCount = 0;
       
+      // このエリアの設備ごとの必須項目数を算出
+      const eqRequiredMap = {};
       areaMaster.forEach(row => {
+        const eqName = row[3];
         const type = row[4];
+        let itemsCount = 0;
         if (type === 'Refrigerator' || type === 'Ref_V') {
           const items = row[5] ? row[5].split(/[、,]/) : ["低圧","高圧","油面","電流"];
-          requiredCount += items.length;
+          itemsCount = items.length;
         } else {
-          requiredCount += 1; 
+          itemsCount = 1; 
         }
+        if (!eqRequiredMap[eqName]) eqRequiredMap[eqName] = 0;
+        eqRequiredMap[eqName] += itemsCount;
       });
 
+      // 保存済みデータから、設備ごとの入力済み項目数を算出
       const areaSavedData = savedData.filter(d => d.area === area);
-      const uniqueSavedItems = new Set(areaSavedData.map(d => `${d.no}-${d.item}`));
-      const savedCount = uniqueSavedItems.size;
+      const eqSavedMap = {};
+      const uniqueSavedItems = new Set();
       
-      const diff = requiredCount - savedCount;
+      areaSavedData.forEach(d => {
+        const key = `${d.no}-${d.item}`;
+        if (!uniqueSavedItems.has(key)) {
+          uniqueSavedItems.add(key);
+          if (!eqSavedMap[d.no]) eqSavedMap[d.no] = 0;
+          eqSavedMap[d.no]++;
+        }
+      });
+      
+      // 必須項目数を満たしていない設備の数をカウント
+      let unfinishedEqCount = 0;
+      for (const eqName in eqRequiredMap) {
+        const req = eqRequiredMap[eqName];
+        const saved = eqSavedMap[eqName] || 0;
+        if (saved < req) {
+          unfinishedEqCount++;
+        }
+      }
       
       const btn = document.getElementById(`area-btn-${area}`);
       if (btn) {
         const badgeEl = btn.querySelector('.area-badge');
         if (badgeEl) {
-          if (diff > 0) {
+          if (unfinishedEqCount > 0) {
             badgeEl.className = 'badge bg-danger ms-3 area-badge';
-            badgeEl.innerText = `未入力: ${diff}件`;
+            badgeEl.innerText = `未完了: ${unfinishedEqCount}台`;
           } else {
             badgeEl.className = 'badge bg-success ms-3 area-badge';
             badgeEl.innerText = '入力完了';
@@ -487,11 +521,18 @@ function generateForm() {
         html += `</tr>`;
       });
     } else {
+      //★★入力幅の変更★★
+      html += `<table class="table table-sm table-bordered align-middle text-center mb-0 mx-auto" style="width: auto; min-width: 30%; max-width: 100%;">`;
       html += `<thead class="table-light"><tr>${itemsOfEq.map(it => `<th>${it[3]}</th>`).join('')}</tr></thead><tbody><tr>`;
       itemsOfEq.forEach(it => { html += `<td><input type="number" step="0.1" class="form-control form-control-sm data-input" data-name="${it[3]}" data-item="指針"></td>`; });
       html += `</tr>`;
     }
-    html += `</tbody></table></div></div>`;
+    html += `</tbody></table>`;
+    if (currentBuilding === "ノーザン棟" && (eqName.includes("湿度"))) {
+      html += `<div class="text-danger small mt-2 text-center fw-bold">※LOの場合は999と入力</div>`;
+    }
+
+    html+=`</div></div>`;
     container.insertAdjacentHTML('beforeend', html);
   });
 
@@ -529,11 +570,11 @@ function fetchSavedData() {
 }
 
 function updateUnfilledCount() {
-  let totalCount = 0;
+  let unfilledEquipmentTotal = 0;
   const eqNames = [...new Set([...document.querySelectorAll('.data-input')].map(el => el.dataset.name))];
   
   eqNames.forEach(eq => {
-    let eqCount = 0;
+    let eqMissingCount = 0;
     const radioGroups = new Set();
     const checkedRadios = new Set();
     
@@ -542,18 +583,18 @@ function updateUnfilledCount() {
         radioGroups.add(el.name);
         if (el.checked) checkedRadios.add(el.name);
       } else {
-        if (el.value === '') eqCount++;
+        if (el.value === '') eqMissingCount++;
       }
     });
     
-    eqCount += (radioGroups.size - checkedRadios.size);
-    totalCount += eqCount;
+    eqMissingCount += (radioGroups.size - checkedRadios.size);
     
     const eqBadge = document.getElementById(`badge-${eq}`);
     if (eqBadge) {
-      if (eqCount > 0) {
+      if (eqMissingCount > 0) {
         eqBadge.className = 'badge bg-danger ms-2 eq-badge';
-        eqBadge.innerText = `未入力: ${eqCount}`;
+        eqBadge.innerText = `未入力あり`;
+        unfilledEquipmentTotal++; // 未入力のある設備としてカウント
       } else {
         eqBadge.className = 'badge bg-success ms-2 eq-badge';
         eqBadge.innerText = '入力完了';
