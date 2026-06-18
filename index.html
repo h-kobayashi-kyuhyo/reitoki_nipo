@@ -636,20 +636,26 @@ function renderTableData(response) {
   const matrix = response.data;
   let html = "";
   
-  // 🌟 一覧や大伸が誤って運転日報ルールにならないよう、現在の種別を厳密チェック
+  // 🌟 種別の厳密チェック
   let isDriverLog = (currentReportType === '運転日報' && response.containerId === 'reportTableContent');
+  // 大伸運輸かどうかの判定（直接ボタンを押した場合 or 一覧から選択した場合両対応）
+  let isDaishin = (currentReportType === '大伸運輸_電気・水道' && response.containerId === 'reportTableContent') || (response.containerId === 'listTableContent' && document.getElementById('listTableSelect') && document.getElementById('listTableSelect').value === '大伸運輸');
 
   let noBorderRows = [0, 1];   
   let useBoxArea = false;      
 
   if (isDriverLog) {
-    noBorderRows = [1, 28, 29, 30, 48]; 
+    noBorderRows = [0, 1, 27, 28, 29, 30, 48]; 
     useBoxArea = true; 
   } else {
     noBorderRows = [0, 1]; 
   }
 
   matrix.forEach((row, rowIndex) => {
+
+    // =========================================================================
+    // 🌟 【運転日報のみ】タイトル行（1行目、29行目）の結合処理
+    // =========================================================================
     if (isDriverLog && (rowIndex === 0 || rowIndex === 28)) {
       html += "<tr>";
       let skip = 0;
@@ -673,6 +679,92 @@ function renderTableData(response) {
       return; 
     }
 
+    // =========================================================================
+    // 🌟 【運転日報のみ】ヘッダー作成ロジック（1枚目: 3,4行目 / 2枚目: 45,46行目）
+    // =========================================================================
+    if (isDriverLog && (rowIndex === 2 || rowIndex === 3 || rowIndex === 44 || rowIndex === 45)) {
+      
+      // 【A】1枚目のヘッダー（3行目 & 4行目）
+      if (rowIndex === 2 || rowIndex === 3) {
+        if (rowIndex === 2) {
+          html += "<tr class='table-light fw-bold text-center' style='background-color: #f2f2f2 !important;'>";
+          row.forEach((cell, colIndex) => {
+            if ([3, 4, 8, 9, 10, 11].includes(colIndex)) {
+              const text = cell ? cell.toString().trim() : "";
+              html += `<th rowspan="2" class="align-middle" style="border: 1px solid #aaa !important; padding: 6px; font-size: 0.9rem; white-space: nowrap;">${text}</th>`;
+            }
+            else if (colIndex === 5) {
+              html += `<th colspan="3" class="align-middle" style="border: 1px solid #aaa !important; padding: 6px; font-size: 0.9rem; white-space: nowrap;">運転時間</th>`;
+            }
+            else if (colIndex === 6 || colIndex === 7) {
+              return;
+            }
+            else {
+              const text = cell ? cell.toString().trim() : "";
+              html += `<th class="align-middle" style="border: 1px solid #aaa !important; padding: 4px; font-size: 0.9rem; white-space: nowrap;">${text}</th>`;
+            }
+          });
+          html += "</tr>";
+        }
+        else if (rowIndex === 3) {
+          html += "<tr class='table-light fw-bold text-center' style='background-color: #f2f2f2 !important;'>";
+          row.forEach((cell, colIndex) => {
+            if ([3, 4, 8, 9, 10, 11].includes(colIndex)) return;
+            const text = cell ? cell.toString().trim() : "";
+            html += `<th class="align-middle" style="border: 1px solid #aaa !important; padding: 4px; font-size: 0.85rem; white-space: nowrap;">${text}</th>`;
+          });
+          html += "</tr>";
+        }
+      }
+
+      // 【B】2枚目のヘッダー（45行目 & 46行目）
+      else if (rowIndex === 44 || rowIndex === 45) {
+        if (rowIndex === 44) {
+          html += "<tr class='table-light fw-bold text-center' style='background-color: #f2f2f2 !important;'>";
+          row.forEach((cell, colIndex) => {
+            if (colIndex > 8) {
+              html += `<th style="border: none !important; background-color: #fff !important;"></th>`;
+              return;
+            }
+            if ([0, 1, 2, 3, 4, 5, 8].includes(colIndex)) {
+              const text = cell ? cell.toString().trim() : "";
+              html += `<th rowspan="2" class="align-middle" style="border: 1px solid #aaa !important; padding: 6px; font-size: 0.9rem; white-space: nowrap;">${text}</th>`;
+            }
+            else if (colIndex === 6) {
+              html += `<th colspan="2" class="align-middle" style="border: 1px solid #aaa !important; padding: 6px; font-size: 0.9rem; white-space: nowrap;">運転時間</th>`;
+            }
+            else if (colIndex === 7) {
+              return;
+            }
+          });
+          html += "</tr>";
+        }
+        else if (rowIndex === 45) {
+          html += "<tr class='table-light fw-bold text-center' style='background-color: #f2f2f2 !important;'>";
+          row.forEach((cell, colIndex) => {
+            if (colIndex > 8) {
+              html += `<th style="border: none !important; background-color: #fff !important;"></th>`;
+              return;
+            }
+            if ([0, 1, 2, 3, 4, 5, 7, 8].includes(colIndex)) return;
+            if (colIndex === 6) {
+              const textG = row[6] ? row[6].toString().trim() : "";
+              const textH = row[7] ? row[7].toString().trim() : "";
+              html += `<th class="align-middle" style="border: 1px solid #aaa !important; padding: 4px; font-size: 0.85rem; white-space: nowrap;">${textG}</th>`;
+              html += `<th class="align-middle" style="border: 1px solid #aaa !important; padding: 4px; font-size: 0.85rem; white-space: nowrap;">${textH}</th>`;
+              return;
+            }
+          });
+          html += "</tr>";
+        }
+      }
+      
+      return; 
+    }
+
+    // =========================================================================
+    // 🌟 通常行の処理（大伸運輸、一覧、および日報のデータ行）
+    // =========================================================================
     html += "<tr>";
     row.forEach((cell, colIndex) => {
       const cellStr = cell ? cell.toString() : ""; 
@@ -686,20 +778,39 @@ function renderTableData(response) {
       let borderStyle = "";
       let bgStyle = "background-color: #fff !important;";
 
-      if (isBoxArea) {
-        borderStyle = "border: none !important; ";
-        if (rowIndex === 49) borderStyle += "border-top: 1px solid #ccc !important; ";
-        if (rowIndex === 52) borderStyle += "border-bottom: 1px solid #ccc !important; ";
-        if (colIndex === 4)  borderStyle += "border-left: 1px solid #ccc !important; ";
-        if (colIndex === 10) borderStyle += "border-right: 1px solid #ccc !important; ";
-        bgStyle = "background-color: transparent !important;";
-      } else if (isEmpty) {
-        borderStyle = "border: none !important;";
-        bgStyle = "background-color: transparent !important;";
-      } else if (isNoBorderRow) {
-        borderStyle = "border: none !important;";
-      } else {
-        borderStyle = "border: 1px solid #ccc !important;";
+      // 🌟 【大伸運輸専用】 3行目(インデックス2)〜34行目(インデックス33) の特別枠線指定
+      if (isDaishin && rowIndex >= 2 && rowIndex <= 33) {
+        // A〜C列 (0, 1, 2) または F〜G列 (5, 6) は空白に関係なく一律枠線あり
+        if ([0, 1, 2, 5, 6].includes(colIndex)) {
+          borderStyle = "border: 1px solid #ccc !important;";
+          bgStyle = "background-color: #fff !important;";
+        } else {
+          // それ以外の列（D, E列など）は中身が空なら枠なし、あれば枠ありの通常ルール
+          if (isEmpty) {
+            borderStyle = "border: none !important;";
+            bgStyle = "background-color: transparent !important;";
+          } else {
+            borderStyle = "border: 1px solid #ccc !important;";
+          }
+        }
+      } 
+      // 通常の共通枠線ロジック
+      else {
+        if (isBoxArea) {
+          borderStyle = "border: none !important; ";
+          if (rowIndex === 49) borderStyle += "border-top: 1px solid #ccc !important; ";
+          if (rowIndex === 52) borderStyle += "border-bottom: 1px solid #ccc !important; ";
+          if (colIndex === 4)  borderStyle += "border-left: 1px solid #ccc !important; ";
+          if (colIndex === 10) borderStyle += "border-right: 1px solid #ccc !important; ";
+          bgStyle = "background-color: transparent !important;";
+        } else if (isEmpty) {
+          borderStyle = "border: none !important;";
+          bgStyle = "background-color: transparent !important;";
+        } else if (isNoBorderRow) {
+          borderStyle = "border: none !important;";
+        } else {
+          borderStyle = "border: 1px solid #ccc !important;";
+        }
       }
 
       let cellStyle = `padding: 4px 6px; white-space: nowrap; ${borderStyle} ${bgStyle}`;
