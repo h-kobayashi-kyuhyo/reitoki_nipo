@@ -50,6 +50,28 @@
     /* iframe（埋め込み）用のスタイル */
     .iframe-container { position: relative; width: 100%; height: 70vh; min-height: 500px; border: 1px solid #ccc; border-radius: 5px; overflow: hidden; background: #fff; }
     .iframe-container iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: none; }
+
+    .container-wide { max-width: 98% !important; transition: max-width 0.3s ease; }
+      /* ▼▼▼ 追加：表の枠線をハッキリさせるスタイル ▼▼▼ */
+    .custom-table { border-collapse: collapse; width: 100%; }
+    .custom-table th, .custom-table td { 
+      border: 1px solid #777 !important; /* 濃いグレーの枠線 */
+      padding: 6px 10px !important;
+    }
+    .custom-table thead th { 
+      background-color: #d1e7dd !important; /* 見出しの背景色（薄い緑） */
+      position: sticky; 
+      top: 0; 
+      z-index: 1; 
+      box-shadow: 0 2px 2px -1px rgba(0,0,0,0.2);
+    }    
+     /* ▼▼▼ 追加：文字が入っていない空っぽのセルは枠線を消す ▼▼▼ */
+    .custom-table th.no-border, 
+    .custom-table td.no-border {
+      border: none !important;
+      background-color: #fff !important;
+    }
+
   </style>
 </head>
 <body>
@@ -73,13 +95,14 @@
 
   <div id="menuView" class="text-center" style="display:none;">
     <h4 id="welcomeMsg" class="mb-4 text-primary fw-bold"></h4> 
-    <div class="d-grid gap-3 col-md-8 mx-auto">
-      <button class="btn btn-outline-primary btn-lg py-4 btn-step" onclick="showBuildingSelection()">機械日報の入力</button>
-      <button class="btn btn-outline-success btn-lg py-4 btn-step" onclick="showReportMenu()">機械運転日報_報告書</button>
-      <button class="btn btn-outline-info btn-lg py-4 btn-step" onclick="showDaishinReport()">大伸運輸_電気・水道</button>
+     <div class="d-grid gap-3 col-md-8 mx-auto">
+       <button class="btn btn-outline-primary btn-lg py-4 btn-step" onclick="showBuildingSelection()">機械日報の入力</button>
       
-      <button class="btn btn-light btn-lg mt-3" onclick="logout()">ログアウト</button>
-    </div>
+       <button class="btn btn-outline-success btn-lg py-4 btn-step" onclick="showReportTable('運転日報')">運転日報（表で確認）</button>
+       <button class="btn btn-outline-info btn-lg py-4 btn-step" onclick="showReportTable('大伸運輸')">大伸運輸_電気・水道（表で確認）</button>
+       <button class="btn btn-outline-warning btn-lg py-4 btn-step" onclick="showListTable()">一覧表（運転時間 / 電気・水道）</button>
+       <button class="btn btn-light btn-lg mt-3" onclick="logout()">ログアウト</button>
+     </div>
   </div>
 
   <div id="buildingSelectView" style="display:none;" class="text-center">
@@ -132,39 +155,51 @@
     </button>
   </div>
 
-  <div id="reportView" style="display:none;">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-      <button class="btn btn-outline-secondary" onclick="backToMenu()">← メニューへ戻る</button>
-      <h4 class="mb-0 fw-bold text-success">運転日報 報告書</h4>
-    </div>
-    
-    <div class="card p-2 mb-3 bg-light shadow-sm text-end">
-      <button class="btn btn-primary" onclick="openUrlInNewTab(reportSheetUrl)">
-        別タブで大きく開く / 印刷する
-      </button>
+<div id="reportTableView" style="display: none;">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4 id="reportTableTitle" class="text-primary mb-0 fw-bold"></h4>
+        <button class="btn btn-outline-secondary btn-sm" onclick="backToMenu()">メニューに戻る</button>
+      </div>
+      <div class="mb-3 d-flex align-items-center bg-light p-2 rounded border">
+        <label class="me-2 fw-bold small text-muted">表示日:</label>
+        <input type="date" id="reportTableDate" class="form-control form-control-sm w-auto" onchange="reloadReportTable()">
+      </div>
+
+      <div id="reportTableSpinner" class="text-center my-4" style="display: none;">
+        <div class="spinner-border text-primary" role="status"></div>
+        <div class="mt-2 text-muted small">スプレッドシートからデータを取得中...</div>
+      </div>
+      <div class="table-responsive shadow-sm rounded border bg-white" style="max-height: 80vh; overflow-y: auto;">
+        <table class="custom-table" id="reportTableContent"></table>
+      </div>
     </div>
 
-    <div class="iframe-container shadow-sm">
-      <iframe id="reportIframe" src="" title="報告書プレビュー"></iframe>
-    </div>
-  </div>
+    <div id="listTableView" style="display: none;">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <div class="d-flex align-items-center">
+          <h4 class="text-primary mb-0 fw-bold me-3">一覧表確認</h4>
+          <select id="listTableSelect" class="form-select form-select-sm w-auto border-primary" onchange="loadListTable()">
+            <option value="一覧表_運転時間">運転時間</option>
+            <option value="一覧表_電気/水道">電気・水道</option>
+          </select>
+        </div>
+        <button class="btn btn-outline-secondary btn-sm" onclick="backToMenu()">メニューに戻る</button>
+      </div>
 
-  <div id="daishinReportView" style="display:none;">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-      <button class="btn btn-outline-secondary" onclick="backToMenu()">← メニューへ戻る</button>
-      <h4 class="mb-0 fw-bold text-info">大伸運輸_電気・水道</h4>
-    </div>
-    
-    <div class="card p-2 mb-3 bg-light shadow-sm text-end">
-      <button class="btn btn-primary" onclick="openUrlInNewTab(daishinSheetUrl)">
-        別タブで大きく開く / 印刷する
-      </button>
-    </div>
+      <div class="mb-3 d-flex flex-wrap align-items-center bg-light p-2 rounded border">
+        <label class="me-2 fw-bold small text-muted">表示日 (対象月):</label>
+        <input type="date" id="listTableDate" class="form-control form-control-sm w-auto" onchange="loadListTable()">
+      </div>
 
-    <div class="iframe-container shadow-sm">
-      <iframe id="daishinIframe" src="" title="大伸運輸_電気・水道プレビュー"></iframe>
+      <div id="listTableSpinner" class="text-center my-4" style="display: none;">
+        <div class="spinner-border text-primary" role="status"></div>
+        <div class="mt-2 text-muted small">データを取得中...</div>
+      </div>
+      
+      <div class="table-responsive shadow-sm rounded border bg-white" style="max-height: 80vh; overflow-y: auto;">
+        <table class="custom-table" id="listTableContent"></table>
+      </div>
     </div>
-  </div>
 
 </div>
 
@@ -309,14 +344,6 @@ function logout() {
   hideAllViews();
   document.getElementById('loginView').style.display = 'block';
 }
-
-function showReportMenu() {
-  hideAllViews();
-  document.getElementById('reportView').style.display = 'block';
-  const reportIframe = document.getElementById('reportIframe');
-  if(reportIframe) reportIframe.src = reportSheetUrl;
-}
-
 
 function setupCommonFields() {
   const dateInput = document.getElementById('commonDate');
@@ -706,7 +733,8 @@ function createMenuBtn(text, onClick) {
 }
 
 function hideAllViews() {
-  const views=['loginView', 'menuView', 'buildingSelectView', 'areaSelectView', 'formView', 'reportView','daishinReportView'];
+  document.querySelector('.container').classList.remove('container-wide');
+  const views=['loginView', 'menuView', 'buildingSelectView', 'areaSelectView', 'formView', 'reportTableView','listTableView'];
   views.forEach(id => {
     const el=document.getElementById(id);
     if(el){
@@ -743,10 +771,113 @@ function autoFillZero(eqName, isStopped) {
   updateUnfilledCount();
 }   
 
-function showDaishinReport() {
-  hideAllViews();
-  document.getElementById('daishinReportView').style.display = 'block';
-  document.getElementById('daishinIframe').src = daishinSheetUrl;
+// ▼▼▼ この関数をまるごと上書きしてください ▼▼▼
+function renderTableData(response) {
+  document.getElementById(response.spinnerId).style.display = 'none';
+  if (!response.success) {
+    document.getElementById(response.containerId).innerHTML = `<tr><td class="text-danger p-3">エラー: ${response.error}</td></tr>`;
+    return;
+  }
+
+  const matrix = response.data;
+  let html = "";
+  
+  // 🌟【エラーの原因を修正】
+  // 安全にデータの中身を確認し、「運転日報」の文字が含まれている場合のみフラグを立てます
+  let isDriverLog = false;
+  try {
+    const resStr = JSON.stringify(response);
+    // 画面全体のテキスト（メニュー名など）も補助的にチェック
+    const bodyText = document.body ? document.body.innerText : "";
+    
+    // 「運転日報」というキーワードがあり、かつ「一覧」や「大伸」が含まれていない場合
+    if ((resStr.includes("運転日報") || bodyText.includes("運転日報")) && 
+        !resStr.includes("一覧表") && !resStr.includes("大伸運輸")) {
+      isDriverLog = true;
+    }
+  } catch (e) {
+    // 万が一エラーが起きてもシステムを止めないようにします
+    isDriverLog = false;
+  }
+
+  // 🌟 ルールの初期設定
+  let noBorderRows = [0, 1];   // 枠線を消す行（デフォルト）
+  let useBoxArea = false;      // E50:K53 の外枠エリア
+
+  // 🌟 条件の切り分け
+  if (isDriverLog) {
+    // ーーー 【A】運転日報（サザン・ノーザン）のルール ーーー
+    noBorderRows = [1, 28, 29, 30, 48]; 
+    useBoxArea = true; // 備考欄の外枠を有効化
+  } else {
+    // ーーー 【B】大伸運輸・一覧表などのルール ーーー
+    noBorderRows = [0, 1]; // 1〜2行目の枠線を消すだけ（29行目は絶対に結合・消し込みしない）
+  }
+
+  // 🌟 表の組み立て
+  matrix.forEach((row, rowIndex) => {
+    
+    // 【運転日報】の場合のみ、1行目(0) と 29行目(28) のタイトル結合ルールを適用
+    if (isDriverLog && (rowIndex === 0 || rowIndex === 28)) {
+      html += "<tr>";
+      let skip = 0;
+      row.forEach((cell, colIndex) => {
+        if (skip > 0) { skip--; return; }
+        const cellText = cell ? cell.toString().trim() : "";
+        
+        if (cellText !== "") {
+          let maxColspan = 5; 
+          let colspan = 1;
+          for (let j = colIndex + 1; j < row.length; j++) {
+            if (colspan >= maxColspan) break;
+            const nextCell = row[j] ? row[j].toString().replace(/[\s ]+/g, "") : "";
+            if (nextCell === "") { colspan++; } else { break; }
+          }
+          html += `<th colspan="${colspan}" class="text-center" style="border: none !important; background-color: #fff !important; font-size: 1.1rem; padding: 10px; white-space: nowrap;">${cellText}</th>`;
+          skip = colspan - 1;
+        } else {
+          html += `<th style="border: none !important; background-color: transparent !important; padding: 4px 6px;"></th>`;
+        }
+      });
+      html += "</tr>";
+      return; 
+    }
+
+    // 通常の行の処理
+    html += "<tr>";
+    row.forEach((cell, colIndex) => {
+      const isEmpty = !cell || cell.toString().replace(/[\s ]+/g, "") === "";
+      const isNumber = !isEmpty && !isNaN(cell.replace(/,/g, '')) && !cell.includes("/") && !cell.includes("日") && !cell.includes("月") && !cell.includes("年");
+      const alignClass = isNumber ? "text-end" : "text-center";
+
+      const isNoBorderRow = noBorderRows.includes(rowIndex);
+      const isBoxArea = useBoxArea && (rowIndex >= 49 && rowIndex <= 52 && colIndex >= 4 && colIndex <= 10);
+
+      let borderStyle = "";
+      let bgStyle = "background-color: #fff !important;";
+
+      if (isBoxArea) {
+        borderStyle = "border: none !important; ";
+        if (rowIndex === 49) borderStyle += "border-top: 1px solid #ccc !important; ";
+        if (rowIndex === 52) borderStyle += "border-bottom: 1px solid #ccc !important; ";
+        if (colIndex === 4)  borderStyle += "border-left: 1px solid #ccc !important; ";
+        if (colIndex === 10) borderStyle += "border-right: 1px solid #ccc !important; ";
+        bgStyle = "background-color: transparent !important;";
+      } else if (isEmpty) {
+        borderStyle = "border: none !important;";
+        bgStyle = "background-color: transparent !important;";
+      } else if (isNoBorderRow) {
+        borderStyle = "border: none !important;";
+      } else {
+        borderStyle = "border: 1px solid #ccc !important;";
+      }
+
+      let cellStyle = `padding: 4px 6px; white-space: nowrap; ${borderStyle} ${bgStyle}`;
+      html += `<td class="${alignClass}" style="${cellStyle}">${cell}</td>`;
+    });
+    html += "</tr>";
+  });
+  document.getElementById(response.containerId).innerHTML = html;
 }
 
 function openUrlInNewTab(url) {

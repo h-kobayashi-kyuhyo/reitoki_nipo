@@ -227,3 +227,46 @@ function saveData(results) {
     return "保存エラー: " + e.message;
   }
 }
+/**
+ * スプレッドシートの指定シートからデータを取得する
+ */
+function getSpreadsheetTableData(sheetName, targetDateStr, containerId, spinnerId) {
+  try {
+    const ss = SpreadsheetApp.openById(SS_ID);
+    const sheet = ss.getSheetByName(sheetName);
+    
+    if (!sheet) {
+      return { success: false, error: "シート「" + sheetName + "」が見つかりません", containerId: containerId, spinnerId: spinnerId };
+    }
+    
+if (targetDateStr) {
+      const formattedDate = targetDateStr.replace(/-/g,'/');
+      
+      if (sheetName === '運転日報') {
+        // 運転日報の場合は B2 セルに日付を入力
+        sheet.getRange("B2").setValue(formattedDate);
+        
+      } else if (sheetName === '大伸運輸') {
+        // 大伸運輸の場合は A1 セルに日付を入力
+        // （※実際のシートに合わせてセル番地を変更してください）
+        sheet.getRange("A1").setValue(formattedDate);
+        
+      } else if (sheetName.includes('一覧表')) {
+        // 「一覧表_運転時間」や「一覧表_電気/水道」の場合は A1 セルに日付を入力
+        // （※実際のシートに合わせてセル番地を変更してください）
+        sheet.getRange("A1").setValue(formattedDate);
+      }
+      
+      // 値を入れた後、スプレッドシートの計算式が完了するのを待つ
+      SpreadsheetApp.flush(); 
+    }
+    
+    // 表示されている値（計算結果）をそのまま取得
+    const displayValues = sheet.getDataRange().getDisplayValues();
+    
+    return { success: true, data: displayValues, containerId: containerId, spinnerId: spinnerId };
+    
+  } catch(e) {
+    return { success: false, error: e.toString(), containerId: containerId, spinnerId: spinnerId };
+  }
+}
