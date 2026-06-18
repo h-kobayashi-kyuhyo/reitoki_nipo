@@ -83,7 +83,8 @@ function getDailyData(dateStr, siteName, building, area) {
         result.push({
           no: eqName,
           item: String(row[7]),
-          value: String(row[8])
+          value: String(row[8]),
+          weather: String(row[3])
         });
       }
     }
@@ -124,7 +125,8 @@ function getBuildingData(dateStr, siteName, building) {
           area: String(row[5]),
           no: eqName,
           item: String(row[7]),
-          value: String(row[8])
+          value: String(row[8]),
+          weather: String(row[3])
         });
       }
     }
