@@ -227,6 +227,16 @@ function saveData(results) {
     return "保存エラー: " + e.message;
   }
 }
+
+function getReportTableData(dateStr, siteName, reportType) {
+  const sheetName = (reportType === '運転日報') ? '運転日報' : '大伸運輸';
+  return getSpreadsheetTableData(sheetName, dateStr, 'reportTableContent', 'reportTableSpinner');
+}
+
+function getListTableData(dateStr, siteName, sheetName) {
+  return getSpreadsheetTableData(sheetName, dateStr, 'listTableContent', 'listTableSpinner');
+}
+
 /**
  * スプレッドシートの指定シートからデータを取得する
  */
