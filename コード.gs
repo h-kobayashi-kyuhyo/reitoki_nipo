@@ -280,3 +280,31 @@ if (targetDateStr) {
     return { success: false, error: e.toString(), containerId: containerId, spinnerId: spinnerId };
   }
 }
+// 大伸運輸のチェックボックス・単価・計算結果をスプレッドシートに保存する関数
+function updateDaishinData(updatedRows) {
+  try {
+    const ss = SpreadsheetApp.openById(SS_ID);
+    const sheet = ss.getSheetByName('大伸運輸');
+    if (!sheet) return { success: false, error: "「大伸運輸」シートが見つかりません" };
+
+    // updatedRows は画面から送られてくる配列 [ {rowIndex: 2, checked: true, price: 150, result: 4500}, ... ]
+    updatedRows.forEach(item => {
+      // スプレッドシートの行番号は rowIndex + 1
+      const rowNum = item.rowIndex + 1;
+      
+      // J列 (10列目): チェックボックス (TRUE / FALSE)
+      sheet.getRange(rowNum, 10).setValue(item.checked);
+      
+      // L列 (12列目): 単価
+      sheet.getRange(rowNum, 12).setValue(item.price);
+      
+      // N列 (14列目): 計算結果
+      sheet.getRange(rowNum, 14).setValue(item.result);
+    });
+
+    SpreadsheetApp.flush();
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
