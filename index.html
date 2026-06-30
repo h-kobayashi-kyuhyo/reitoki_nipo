@@ -71,6 +71,49 @@
       border: none !important;
       background-color: #fff !important;
     }
+/* =========================================================================
+   🌟 印刷・PDF出力専用の書式コントロール
+   ========================================================================= */
+@media print {
+  /* 1. 画面上のボタン、ドロップダウンメニュー、ナビゲーションバーなどを完全に非表示にする */
+  nav, .navbar, .btn, button, select, input[type="date"], #listTableSelect, .spinner-border {
+    display: none !important;
+  }
+
+  /* 2. 背景色や文字色をプリンタ・PDF側で強制的に有効にする */
+  body {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    background-color: #fff !important;
+    color: #000 !important;
+  }
+
+  /* 3. テーブルをA4の横幅いっぱいにジャストフィットさせ、スクロールバーを消す */
+  .table-responsive {
+    overflow: visible !important;
+    width: 100% !important;
+  }
+
+  table {
+    width: 100% !important;
+    table-layout: auto !important;
+    border-collapse: collapse !important;
+  }
+
+  /* J列のチェックボックスやL列の数値入力ボックスの「枠線」を消して綺麗に見せる */
+  input[type="checkbox"], input[type="number"] {
+    border: none !important;
+    background: transparent !important;
+    appearance: none;
+    -webkit-appearance: none;
+  }
+
+  /* 4. 印刷全体の余白を調整（上下左右に薄くマージンを持たせる） */
+  @page {
+    size: A4 landscape; /* A4用紙・横向きに固定 */
+    margin: 10mm 10mm 10mm 10mm;
+  }
+ }
 
   </style>
 </head>
@@ -162,7 +205,10 @@
       </div>
       <div class="mb-3 d-flex align-items-center bg-light p-2 rounded border">
         <label class="me-2 fw-bold small text-muted">表示日:</label>
-        <input type="date" id="reportTableDate" class="form-control form-control-sm w-auto" onchange="reloadReportTable()">
+        <input type="date" id="reportTableDate" class="form-control form-control-sm w-auto" onchange="reloadReportTable()"> 
+            <button class="btn btn-secondary   btn-sm ms-2" onclick="printReportTable()">
+            <i class="bi bi-printer"></i> PDFで印刷
+            </button>        
       </div>
 
       <div id="reportTableSpinner" class="text-center my-4" style="display: none;">
@@ -190,6 +236,9 @@
         <label class="me-2 fw-bold small text-muted">表示日 (対象月):</label>
         <input type="date" id="listTableDate" class="form-control form-control-sm w-auto" onchange="loadListTable()">
       </div>
+          <button class="btn btn-secondary btn-sm ms-2" onclick="printReportTable()">
+          <i class="bi bi-printer"></i> PDFで印刷
+          </button>
 
       <div id="listTableSpinner" class="text-center my-4" style="display: none;">
         <div class="spinner-border text-primary" role="status"></div>
@@ -992,7 +1041,13 @@ function recalcDaishinRow(rowIndex) {
 
    function openUrlInNewTab(url) {
     window.open(url, '_blank');
-   }      
+   }
+
+// 🌟 印刷実行関数
+   function printReportTable() {
+    // 現在表示されているテーブルのコンテンツを読み込み、印刷ダイアログを開く
+    window.print();
+  }         
 </script>
 </body>
 </html>
